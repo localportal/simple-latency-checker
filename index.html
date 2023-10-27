@@ -1,136 +1,108 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title>Dropdown Test</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Batch Request Page</title>
     <style>
-      #status {
-        margin-top: 20px;
-      }
-      body {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        margin: 0;
-      }
-      .container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-      }
-      .left-section,
-      .right-section {
-        flex: 1;
-        padding: 20px;
-      }
-      .ws-section {
-        flex: 1;
-        padding: 20px;
-      }
-      .right-section {
-        display: flex;
-        flex-direction: row;
-      }
+      /* Your CSS goes here */
     </style>
   </head>
   <body>
-    <div class="container">
-      <!-- Left Section for HTTP -->
-      <div class="left-section">
-        <select id="numberDropdown">
-          <option value="0">0</option>
-          <option value="1" selected>1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-        </select>
-        <button onclick="sendHttpRequest()">Send HTTP</button>
-        <div id="httpStatus"></div>
-      </div>
+    <button id="startButton">Start</button>
+    <label for="batchSize">Batch Size:</label>
+    <input type="number" id="batchSize" name="batchSize" value="10" />
+    <label for="batchCount">Batch Count:</label>
+    <input type="number" id="batchCount" name="batchCount" value="5" />
 
-      <!-- Right Section for WebSocket -->
-      <div class="right-section">
-        <div class="ws-section" id="ws1">
-          <button onclick="sendWebSocketRequest('ws1')">Send Hi</button>
-          <div class="ws-status"></div>
-        </div>
-        <div class="ws-section" id="ws2">
-          <button onclick="sendWebSocketRequest('ws2')">Send Hi</button>
-          <div class="ws-status"></div>
-        </div>
-        <div class="ws-section" id="ws3">
-          <button onclick="sendWebSocketRequest('ws3')">Send Hi</button>
-          <div class="ws-status"></div>
-        </div>
-      </div>
-    </div>
+    <table id="resultsTable">
+      <tr>
+        <th>Serial Number</th>
+        <th>Request-Response Time</th>
+        <th>Batch Average Time</th>
+        <th>Overall Average Time</th>
+      </tr>
+    </table>
 
     <script>
-      let wsConnections = {};
+      const startButton = document.getElementById("startButton");
+      const batchSizeInput = document.getElementById("batchSize");
+      const batchCountInput = document.getElementById("batchCount");
+      const resultsTable = document.getElementById("resultsTable");
 
-      function sendHttpRequest() {
-        document.getElementById("httpStatus").innerHTML = "";
+      let overallAverageTime = 0;
+      let overallRequestCount = 0;
+      let overallTimeSum = 0;
 
-        let value = parseInt(document.getElementById("numberDropdown").value);
+      function appendRow(
+        serialNumber,
+        requestResponseTime,
+        batchAverageTime,
+        overallAverageTime
+      ) {
+        const row = resultsTable.insertRow(-1);
+        row.insertCell(0).textContent = serialNumber;
+        row.insertCell(1).textContent = requestResponseTime + " ms";
+        const batchCell = row.insertCell(2);
+        if (batchAverageTime !== null) {
+          batchCell.textContent = batchAverageTime + " ms";
+        }
+        const overallCell = row.insertCell(3);
+        if (overallAverageTime !== null) {
+          overallCell.textContent = overallAverageTime + " ms";
+        }
 
-        for (let i = 0; i < value; i++) {
-          let startTime = new Date();
-          fetch(`/http?number=${i + 1}`, { method: "GET" })
-            .then((response) => {
-              let endTime = new Date();
-              let timeDiff = endTime - startTime;
-              let newStatus = document.createElement("div");
-              newStatus.innerText = `HTTP Request ${i + 1}: Status: ${
-                response.status
-              }, Time: ${timeDiff}ms`;
-              document.getElementById("httpStatus").appendChild(newStatus);
-            })
-            .catch((error) => {
-              let newStatus = document.createElement("div");
-              newStatus.innerText = `HTTP Request ${i + 1}: Error: ${error}`;
-              document.getElementById("httpStatus").appendChild(newStatus);
+        return { batchCell, overallCell };
+      }
+
+      async function processBatch(batchNumber, batchSize, timesArray) {
+        const requests = Array.from({ length: batchSize }, (_, i) => {
+          const requestNumber = batchNumber * batchSize + i + 1;
+          const startTime = Date.now();
+          return fetch("/http?number=" + requestNumber)
+            .then((response) => response.json())
+            .then((data) => {
+              const endTime = Date.now();
+              const requestResponseTime = endTime - startTime;
+              timesArray.push(requestResponseTime);
+
+              const { batchCell, overallCell } = appendRow(
+                requestNumber,
+                requestResponseTime,
+                null,
+                null
+              );
             });
-        }
-      }
-
-      function initWebSocket(sectionId) {
-        let ws = new WebSocket("wss://hola.lp.link:8001/websocket");
-        ws.onopen = function (event) {
-          ws.isReady = true;
-          if (ws.queuedMessage) {
-            ws.send(ws.queuedMessage);
-            ws.queuedMessage = null;
-          }
-        };
-        ws.addEventListener("message", function (event) {
-          let endTime = new Date();
-          let timeDiff = endTime - ws.startTime;
-          document.querySelector(
-            `#${sectionId} .ws-status`
-          ).innerText = `Round-trip time: ${timeDiff}ms`;
         });
-        return ws;
+
+        await Promise.all(requests);
       }
 
-      function sendWebSocketRequest(sectionId) {
-        if (!wsConnections[sectionId]) {
-          wsConnections[sectionId] = initWebSocket(sectionId);
+      startButton.addEventListener("click", async () => {
+        const batchSize = parseInt(batchSizeInput.value, 10);
+        const batchCount = parseInt(batchCountInput.value, 10);
+        let overallTimeSum = 0;
+        let overallRequestCount = 0;
+
+        for (let i = 0; i < batchCount; i++) {
+          const timesArray = [];
+          await processBatch(i, batchSize, timesArray);
+
+          const batchTimeSum = timesArray.reduce((sum, time) => sum + time, 0);
+          const batchAverageTime = batchTimeSum / batchSize;
+
+          overallTimeSum += batchTimeSum;
+          overallRequestCount += batchSize;
+
+          // Assuming you want to update the first row of each batch with the batch average time
+          const firstBatchRow = resultsTable.rows[i * batchSize + 1]; // Adjust index if your table has headers
+          firstBatchRow.cells[2].textContent = batchAverageTime + " ms";
         }
-        let ws = wsConnections[sectionId];
-        ws.startTime = new Date();
 
-        const checkConnection = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            clearInterval(checkConnection);
-            ws.send("Hi");
-          } else {
-            console.log(
-              `WebSocket in section ${sectionId} is not yet connected. Trying again.`
-            );
-          }
-        }, 100); // Check every 100ms
-      }
+        overallAverageTime = overallTimeSum / overallRequestCount;
+        const overallAverageCell = resultsTable.rows[1].cells[3];
+        overallAverageCell.textContent = overallAverageTime + " ms";
+      });
     </script>
   </body>
 </html>
