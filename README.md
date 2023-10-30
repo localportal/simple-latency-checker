@@ -1,2 +1,13 @@
 # simple-latency-checker
-A python script with simple html to test the network latency
+
+## Install FastAPI
+
+```
+pip install fastapi
+```
+
+## Run the server
+
+```
+uvicorn serve:app
+```
